@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: orbo
+Version: 0.1.0
+Summary: Python SDK for TSETMC
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: pandas>=2.3.0
+Requires-Dist: rich>=14.0.0
+Requires-Dist: pydantic>=2.11.0
+Requires-Dist: jdatetime>=5.0.0
+Requires-Dist: pyarrow>=20.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.4; extra == "dev"
+Requires-Dist: ruff>=0.12; extra == "dev"
+Requires-Dist: mypy>=1.17; extra == "dev"
