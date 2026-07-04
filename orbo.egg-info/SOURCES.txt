@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 orbo/__init__.py
 orbo/constants.py
@@ -19,6 +20,7 @@ orbo/clients/option.py
 orbo/clients/retry.py
 orbo/clients/static.py
 orbo/clients/tsetmc.py
+orbo/data/static_data.json
 orbo/data/static_loader.py
 orbo/data/transformers.py
 orbo/engines/__init__.py
