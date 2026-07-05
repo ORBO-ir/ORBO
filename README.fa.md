@@ -1,161 +1,154 @@
+<div dir="rtl">
+
 # orbo
 
-**کتابخانه Python برای دسترسی به داده‌های بورس تهران (TSETMC)**
+**Tehran Stock Exchange data**
 
-فارسی | [English](README.md)
+[English](README.md) &nbsp;·&nbsp;
+[![PyPI](https://img.shields.io/pypi/v/orbo)](https://pypi.org/project/orbo/)
+[![Python](https://img.shields.io/pypi/pyversions/orbo)](https://pypi.org/project/orbo/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-`orbo` دسترسی تمیز، typed، و Pandas-friendly به تمام فیدهای عمومی [TSETMC](https://www.tsetmc.com) رو فراهم می‌کنه:
-تاریخچه روزانه OHLCV، ریزمعاملات داخل روز، استریم اردربوک، زنجیره آپشن، شاخص‌های بازار، جریان حقیقی/حقوقی، و داده لحظه‌ای — همه با تاریخ شمسی، تعدیل قیمت داخلی، و retry خودکار.
+`orbo` یک SDK پایتون برای [TSETMC](https://www.tsetmc.com) است.
+داده‌های خام API را به DataFrame های تمیز با تاریخ شمسی تبدیل می‌کند —
+با تعدیل قیمت، طبقه‌بندی جریان سفارش، و داده لحظه‌ای.
+
+</div>
 
 ```python
 import orbo
 
-# جستجو و دریافت تاریخچه
 stock = orbo.Instrument("شپنا")
-df    = stock.history(adjust=True)     # OHLCV تعدیل‌شده با تاریخ شمسی
-stats = stock.stats()                  # بازده، کجی، کشیدگی، نوع دُم توزیع
+
+# تاریخچه تعدیل‌شده با تاریخ شمسی
+df = stock.history(adjust=True)
+#         date      open    high     low   close  volume
+# 0  1394-01-05  7,230.0  7,420.0  7,210.0  7,380.0  3.2M
+# …
+# 1403-11-22   41,250.0  42,100.0  41,100.0  41,900.0  8.7M
+
+# توزیع بازده
+stats = stock.stats()
+print(stats.descriptive["std"])         # انحراف معیار بازده روزانه
+print(stats.distribution["tail_type"])  # fat_tail / thin_tail / normal_tail
 
 # جریان سفارش داخل روز
 session    = stock.intraday("20260628")
 classified = orbo.TradeSideEngine().classify(session.trades, session.orderbook)
-footprint  = orbo.FootprintEngine().build(classified)
-print(footprint.summary())             # POC، دلتا، درصد خرید، درصد طبقه‌بندی‌شده
-
-# اسنپشات لحظه‌ای
-snap = stock.live()
-print(snap.price[["close","last_price","time"]])
-print(snap.orderbook)                  # اردربوک ۵ سطحی لحظه‌ای
-
-# زنجیره آپشن
-chain = orbo.OptionChain.fetch()
-df    = chain.for_expiry("اهرم", "1405-04-31")
-
-# شاخص بازار
-idx = orbo.find_index("شاخص كل")
-df  = idx.history()
+result     = orbo.FootprintEngine().build(classified)
+print(result.poc_price)    # Point of Control — پرمعامله‌ترین قیمت روز
+print(result.total_delta)  # فشار خرید خالص جلسه
 ```
+
+<div dir="rtl">
 
 ---
 
 ## نصب
 
+</div>
+
 ```bash
 pip install orbo
 ```
 
-**نیاز به Python ≥ 3.11**
+<div dir="rtl">
 
-وابستگی‌ها: `httpx`, `pandas`, `pydantic`, `jdatetime`, `pyarrow`
-
-> **نکته:** آدرس API مورد استفاده (`cdn.tsetmc.com`) از داخل ایران مستقیم در دسترسه. از خارج از ایران به VPN با IP داخلی نیاز دارید.
+نیاز به Python نسخه ۳.۱۱ یا بالاتر. از داخل ایران بدون VPN کار می‌کند.
 
 ---
 
-## شروع سریع
+## قابلیت‌ها
 
-### ۱ — تاریخچه قیمت روزانه
+| متد | توضیح |
+|---|---|
+| `stock.history(adjust=True)` | تاریخچه کامل OHLCV، تعدیل‌شده برای سود نقدی و افزایش سرمایه |
+| `stock.today()` | قیمت لحظه‌ای جلسه جاری |
+| `stock.stats()` | بازده روزانه/ماهانه/سالانه، کجی، کشیدگی، نوع دُم توزیع |
+| `stock.intraday(date)` | ریزمعاملات، اردربوک، نوار قیمت، سهامداران، جریان حقیقی/حقوقی |
+| `stock.live()` | قیمت + معاملات + اردربوک ۵ سطحی + حقیقی/حقوقی — همه با یک اتصال |
+| `TradeSideEngine` | طبقه‌بندی طرف تهاجمی به روش Lee-Ready (Quote Rule + Tick Rule) |
+| `FootprintEngine` | حجم خرید/فروش، دلتا، POC، و وضعیت عدم‌تعادل — به تفکیک سطح قیمتی |
+| `OptionChain.fetch()` | زنجیره کامل آپشن با moneyness — قابل رفرش لحظه‌ای |
+| `find_index("شاخص كل")` | شاخص‌های TSE/OTC — تاریخچه، داخل روز، شرکت‌های عضو |
+
+---
+
+## مثال‌ها
+
+### تاریخچه قیمت و آمار
+
+</div>
 
 ```python
-import orbo
+stock = orbo.Instrument("فملی")
+df    = stock.history(adjust=True, count=252)   # یک سال اخیر، تعدیل‌شده
 
-stock = orbo.Instrument("فملی")        # جستجو با نماد
-df    = stock.history()                # تاریخچه کامل OHLCV با تاریخ شمسی
-df    = stock.history(adjust=True)     # تعدیل‌شده (سود نقدی + افزایش سرمایه)
-df    = stock.history(count=30)        # ۳۰ روز معاملاتی اخیر
-
-print(df[["date","close","volume"]].tail())
-```
-
-### ۲ — آمار توصیفی و توزیع بازده
-
-```python
 stats = stock.stats(adjust=True)
-
-print(stats.descriptive)              # میانگین، میانه، انحراف معیار، دامنه
-print(stats.distribution)            # کجی، کشیدگی، نوع دُم، آیا fat-tail هست
-print(stats.monthly)                 # بازده ماهانه مرکب
-print(stats.yearly)                  # بازده سالانه مرکب
-print(stats.cumulative.iloc[-1])     # بازده تجمعی کل دوره
-print(stats.nav_index)               # اندیس NAV با شروع از ۱۰۰
+print(stats.descriptive)   # میانگین، میانه، انحراف معیار، دامنه
+print(stats.monthly)       # بازده ماهانه مرکب
+print(stats.yearly)        # بازده سالانه مرکب
+print(stats.distribution)  # کجی، کشیدگی، طبقه‌بندی fat-tail
+print(stats.nav_index)     # اندیس NAV با شروع از ۱۰۰
 ```
 
-### ۳ — ریزمعاملات و داده داخل روز
+<div dir="rtl">
+
+### جریان سفارش داخل روز ← فوتپرینت
+
+</div>
 
 ```python
-session  = stock.intraday("20260628")
+session = orbo.Instrument("شپنا").intraday("20260628")
 
-df_trades = session.trades           # ریزمعاملات مرتب‌شده بر اساس شماره معامله
-df_ob     = session.orderbook        # استریم آپدیت اردربوک (incremental)
-df_pt     = session.price_tape       # نوار قیمت پایانی رسمی
-df_ct     = session.client_type      # جریان خرید/فروش حقیقی-حقوقی
-df_sh     = session.shareholders     # سهامداران عمده
-```
-
-### ۴ — تشخیص طرف تهاجمی (Lee-Ready)
-
-```python
+# طبقه‌بندی هر معامله به‌عنوان خریدار یا فروشنده تهاجمی
 classified = orbo.TradeSideEngine().classify(
     session.trades,
-    session.orderbook,    # Quote Rule را فعال می‌کند؛ در غیر این صورت Tick Rule
+    session.orderbook,   # Quote Rule را فعال می‌کند؛ در غیر این صورت Tick Rule
 )
-# هر ردیف دو ستون اضافه می‌گیرد:
-# side: "buy" | "sell" | "unknown"
-# method: "quote" | "tick" | "tick_carry"
+
+# تجمیع در قالب بارهای فوتپرینت
+fp = orbo.FootprintEngine().build(classified)
+print(fp.bars[["price","buy_volume","sell_volume","delta","imbalance"]])
+print(fp.summary())   # poc_price, total_delta, buy_pct, classified_pct
 ```
 
-### ۵ — داده چارت Footprint
+<div dir="rtl">
+
+### زنجیره آپشن
+
+</div>
 
 ```python
-result = orbo.FootprintEngine().build(classified)
+chain = orbo.OptionChain.fetch()              # اسنپشات کامل، همه بازارها
+chain.refresh()                               # آپدیت قیمت‌ها در همان آبجکت
 
-print(result.poc_price)      # Point of Control — پرمعامله‌ترین قیمت
-print(result.total_delta)    # فشار خرید خالص جلسه
-print(result.bars)           # جزئیات هر سطح قیمتی: خرید، فروش، دلتا، عدم‌تعادل
+print(chain.underlyings)                      # ["اهرم", "توان", ...]
+df = chain.for_expiry("اهرم", "1405-05-31")  # جدول اعمال یک سررسید
+print(chain.summary())                        # تعداد اعمال و OI به تفکیک سررسید
 ```
 
-### ۶ — زنجیره آپشن
+<div dir="rtl">
+
+### شاخص‌های بازار
+
+</div>
 
 ```python
-chain = orbo.OptionChain.fetch()           # همه بازارها
-chain = orbo.OptionChain.fetch(1)          # فقط بورس
+idx = orbo.find_index("شاخص كل")   # جستجو با نام
+df  = idx.history()                 # تاریخچه کامل روزانه با تاریخ شمسی
 
-print(chain.underlyings)                   # لیست دارایی‌های پایه
-df = chain.for_expiry("اهرم", "1405-04-31")   # جدول اعمال یک سررسید
-print(chain.summary())                     # تعداد اعمال، OI کل به تفکیک سررسید
-
-chain.refresh()                            # دریافت مجدد قیمت‌های لحظه‌ای
-```
-
-### ۷ — شاخص‌های بازار
-
-```python
-# اسنپشات همه شاخص‌ها
-df = orbo.index_snapshot()
-
-# یک شاخص با جستجوی نام
-idx = orbo.find_index("شاخص كل")
-df  = idx.history()          # تاریخچه کامل روزانه با تاریخ شمسی
-df  = idx.today()            # سری زمانی داخل روز امروز
-df  = idx.companies()        # شرکت‌های عضو با قیمت لحظه‌ای
-
-# آمار روی تاریخچه شاخص
 stats = idx.stats()
+print(stats.yearly)
 ```
 
-### ۸ — داده لحظه‌ای
+<div dir="rtl">
 
-```python
-snap = orbo.Instrument("شپنا").live()   # ۴ endpoint با یک اتصال
+### دریافت دسته‌ای با retry خودکار
 
-snap.price        # قیمت لحظه‌ای جلسه جاری (همان schema که today() برمی‌گردانه)
-snap.trades       # همه معاملات تا همین لحظه امروز
-snap.orderbook    # اسنپشات کامل ۵ سطحی (نه incremental)
-snap.client_type  # جریان حقیقی/حقوقی جلسه جاری
-```
-
-### ۹ — دریافت دسته‌ای چند روزه با retry
+</div>
 
 ```python
 sessions, failed = orbo.fetch_intraday_range(
@@ -163,93 +156,72 @@ sessions, failed = orbo.fetch_intraday_range(
     dates   = ["20260622", "20260623", "20260624", "20260625"],
     fields  = ["trades", "orderbook"],
 )
-if failed:
-    print("روزهای ناموفق:", failed)
+# failed ← روزهایی که بعد از همه تلاش‌ها دریافت نشدند
 ```
+
+<div dir="rtl">
 
 ---
 
 ## معماری
 
+</div>
+
 ```
 orbo/
-├── clients/        لایه HTTP — wrapper های httpx با retry خودکار
-├── data/           transformerها — JSON خام → DataFrame typed
-├── engines/        محاسبات خالص — بدون شبکه، بدون I/O
-│   ├── adjustment.py   تعدیل تجمعی قیمت
-│   ├── trade_side.py   طبقه‌بندی طرف تهاجمی (Quote + Tick Rule)
-│   ├── footprint.py    تجمیع خرید/فروش به تفکیک سطح قیمتی
-│   ├── daily_stats.py  سری بازده + آمار توزیع
-│   └── intra_stats.py  VWAP داخل روز + توزیع
-├── models/         آبجکت‌های Pydantic
-├── registry/       جستجوی محلی نماد (کش Parquet)
-├── history/        InstrumentHistory — OHLCV روزانه
-├── intraday/       IntradaySession — داده tick هر روز
-├── index/          MarketIndex — شاخص‌های TSE/OTC
-├── option_chain/   OptionChain — قراردادهای آپشن لیست‌شده
-└── instrument.py   Instrument — API یکپارچه سطح بالا
+├── clients/        لایه HTTP — retry خودکار روی هر درخواست
+├── data/           transformerها — JSON خام → DataFrame typed با تاریخ شمسی
+├── engines/        محاسبات خالص — بدون شبکه، کاملاً قابل تست
+│   ├── adjustment  تعدیل تجمعی قیمت (backward cumulative pass)
+│   ├── trade_side  طبقه‌بندی طرف تهاجمی (Lee-Ready)
+│   ├── footprint   تجمیع جریان سفارش به تفکیک سطح قیمتی
+│   ├── daily_stats سری بازده + آمار توزیع
+│   └── intra_stats VWAP + توزیع سطح tick
+├── registry/       کش محلی Parquet برای تبدیل نماد → inscode
+└── instrument.py   نقطه ورود یکپارچه سطح بالا
 ```
 
-**اصول طراحی:**
-- Engine‌ها توابع خالص روی DataFrame هستند — بدون شبکه، بدون فایل، کاملاً قابل تست.
-- Transformer‌ها مالک تمام تغییر نام فیلدها و تبدیل تاریخ به شمسی هستند.
-- هر HTTP client به‌صورت خودکار retry می‌کند (۳ بار، backoff نمایی).
-- `insCode` و `dEven` وقتی از API برگشته‌اند به صورت null قابل اعتماد نیستند — caller آن‌ها را تزریق می‌کند.
+<div dir="rtl">
+
+سه قانون طراحی:
+- **Engine‌ها** هیچ‌وقت به شبکه دست نمی‌زنند.
+- **Transformer‌ها** مسئول تمام تبدیل نام فیلدها و تاریخ شمسی هستند.
+- **Client‌ها** به‌صورت خودکار retry می‌کنند (۳ بار، backoff نمایی).
 
 ---
 
-## endpointهای پشتیبانی‌شده
+## آینده — `orbo-quant`
 
-| دسته | Endpoint | متد orbo |
-|---|---|---|
-| OHLCV روزانه | GetClosingPriceDailyList | `stock.history()` |
-| قیمت لحظه‌ای | GetClosingPriceInfo | `stock.today()`, `stock.live().price` |
-| تعدیل قیمت | GetPriceAdjustList | `stock.history(adjust=True)` |
-| افزایش سرمایه | GetInstrumentShareChange | `stock.history(adjust=True)` |
-| ریزمعاملات | GetTradeHistory | `session.trades` |
-| معاملات لحظه‌ای | GetTrade | `stock.live().trades` |
-| اردربوک (تاریخی) | BestLimits/{date} | `session.orderbook` |
-| اردربوک (لحظه‌ای) | BestLimits | `stock.live().orderbook` |
-| نوار قیمت | GetClosingPriceHistory | `session.price_tape` |
-| حقیقی/حقوقی (تاریخی) | GetClientTypeHistory | `session.client_type` |
-| حقیقی/حقوقی (لحظه‌ای) | GetClientType | `stock.live().client_type` |
-| سهامداران | Shareholder | `session.shareholders` |
-| وضعیت معاملاتی | GetInstrumentStateAll | `stock.state()` |
-| زنجیره آپشن | GetInstrumentOptionMarketWatch | `OptionChain.fetch()` |
-| اسنپشات شاخص | GetIndexB1LastAll | `orbo.index_snapshot()` |
-| تاریخچه شاخص | GetIndexB2History | `idx.history()` |
-| شاخص داخل روز | GetIndexB1LastDay | `idx.today()` |
-| شرکت‌های شاخص | GetIndexCompany | `idx.companies()` |
-| جستجوی نماد | GetInstrumentSearch | `orbo.search("فملی")` |
+یک کتابخانه جداگانه که از `orbo` داده می‌خواند و موارد زیر را اضافه می‌کند:
 
----
-
-## آینده
-
-**`orbo-quant`** — کتابخانه‌ای جدا که از `orbo` داده می‌خواند و موارد زیر را اضافه می‌کند:
-
-- قیمت‌گذاری Black-Scholes و Greeks (Δ, Γ, Θ, Vega, Rho)
+- قیمت‌گذاری Black-Scholes و Greeks — Δ، Γ، Θ، ν، ρ
 - حل‌کننده Implied Volatility
 - ساخت سطح IV
 - سازنده استراتژی آپشن و دیاگرام P&L
 - بهینه‌سازی پورتفولیو
 
-`orbo` به دریافت داده اختصاص دارد. تحلیل در `orbo-quant` قرار می‌گیرد.
+`orbo` روی دریافت داده متمرکز می‌ماند. تحلیل در `orbo-quant` قرار می‌گیرد.
 
 ---
 
 ## توسعه
 
+</div>
+
 ```bash
-git clone https://github.com/your-username/orbo
-cd orbo
+git clone https://github.com/ORBO-ir/ORBO.git
+cd ORBO
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
+<div dir="rtl">
+
 ---
 
 ## مجوز
 
-MIT © 2026
+MIT © 2026 — [ORBO-ir](https://github.com/ORBO-ir)
+
+</div>

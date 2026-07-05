@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbo"
-version = "0.1.1"
+version = "0.1.2"
 description = "Python SDK for TSETMC"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ORBO-ir/ORBO"
+Repository = "https://github.com/ORBO-ir/ORBO"
+Issues = "https://github.com/ORBO-ir/ORBO/issues"
+
 
 dependencies = [
     "httpx>=0.28.0",

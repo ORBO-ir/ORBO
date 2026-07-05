@@ -1,156 +1,124 @@
 # orbo
 
-**Python SDK for TSETMC — Tehran Stock Exchange data.**
+**Tehran Stock Exchange data, done right.**
 
-[فارسی](README.fa.md) | English
+[فارسی](README.fa.md) &nbsp;·&nbsp;
+[![PyPI](https://img.shields.io/pypi/v/orbo)](https://pypi.org/project/orbo/)
+[![Python](https://img.shields.io/pypi/pyversions/orbo)](https://pypi.org/project/orbo/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-`orbo` gives you clean, typed, Pandas-friendly access to every public data feed on [TSETMC](https://www.tsetmc.com): daily OHLCV history, intraday tick trades, the order-book update stream, option chains, market indices, real/legal client-type flows, and live session data — all with Jalali dates, price-adjustment built-in, and retry logic out of the box.
+`orbo` is a Python SDK for [TSETMC](https://www.tsetmc.com).
+It turns raw API responses into clean, Jalali-dated DataFrames — with price adjustment,
+order-flow classification, and live data built in.
 
 ```python
 import orbo
 
-# Search and fetch
 stock = orbo.Instrument("شپنا")
-df    = stock.history(adjust=True)     # adjusted daily OHLCV — Jalali dates
-stats = stock.stats()                  # returns, skewness, kurtosis, tail type
 
-# Intraday order-flow
+# Adjusted daily history — Jalali dates, derived returns
+df = stock.history(adjust=True)
+#         date      open    high     low   close  volume
+# 0  1394-01-05  7,230.0  7,420.0  7,210.0  7,380.0  3.2M
+# …
+# 1403-11-22   41,250.0  42,100.0  41,100.0  41,900.0  8.7M
+
+# Return distribution
+stats = stock.stats()
+print(stats.descriptive["std"])         # daily return std
+print(stats.distribution["tail_type"])  # fat_tail / thin_tail / normal_tail
+
+# Intraday order flow
 session    = stock.intraday("20260628")
 classified = orbo.TradeSideEngine().classify(session.trades, session.orderbook)
-footprint  = orbo.FootprintEngine().build(classified)
-print(footprint.summary())             # POC, delta, buy%, classified%
-
-# Live snapshot
-snap = stock.live()
-print(snap.price[["close","last_price","time"]])
-print(snap.orderbook)                  # 5-level live book
-
-# Option chain
-chain = orbo.OptionChain.fetch()
-df    = chain.for_expiry("اهرم", "1405-04-31")
-
-# Market indices
-idx = orbo.find_index("شاخص كل")
-df  = idx.history()
+result     = orbo.FootprintEngine().build(classified)
+print(result.poc_price)    # Point of Control — highest-volume price
+print(result.total_delta)  # net buy pressure for the session
 ```
 
 ---
 
-## Installation
+## Install
 
 ```bash
 pip install orbo
 ```
 
-**Requires Python ≥ 3.11.**
-
-Dependencies: `httpx`, `pandas`, `pydantic`, `jdatetime`, `pyarrow`.
-
-> **VPN required in Iran.** TSETMC's CDN API (`cdn.tsetmc.com`) is accessible from inside Iran without VPN. Outside Iran, a VPN pointed at a domestic IP is needed.
+Requires Python ≥ 3.11. Works from inside Iran without VPN.
 
 ---
 
-## Quickstart
+## What it does
 
-### 1 — Daily price history
+| | |
+|---|---|
+| `stock.history(adjust=True)` | Full OHLCV history, price-adjusted for dividends and capital increases |
+| `stock.today()` | Live current-session price |
+| `stock.stats()` | Daily/monthly/yearly returns, skewness, kurtosis, tail type |
+| `stock.intraday(date)` | Trades, order book, price tape, shareholders, client-type flows |
+| `stock.live()` | Live price + trades + 5-level book + real/legal flows in one call |
+| `TradeSideEngine` | Lee-Ready aggressor classification (Quote Rule + Tick Rule) |
+| `FootprintEngine` | Per-price buy/sell volume, delta, POC, imbalance flags |
+| `OptionChain.fetch()` | Full listed option chain with moneyness — refreshable live |
+| `find_index("شاخص كل")` | TSE/OTC indices — history, intraday, constituent companies |
+
+---
+
+## Examples
+
+### Price history and statistics
 
 ```python
-import orbo
+stock = orbo.Instrument("فملی")
+df    = stock.history(adjust=True, count=252)   # last year, adjusted
 
-stock = orbo.Instrument("فملی")        # resolve by symbol
-df    = stock.history()                # full OHLCV history, Jalali dates
-df    = stock.history(adjust=True)     # price-adjusted (dividends + capital increases)
-df    = stock.history(count=30)        # last 30 trading days
-
-print(df[["date","close","volume"]].tail())
-```
-
-### 2 — Descriptive statistics and return distribution
-
-```python
 stats = stock.stats(adjust=True)
-
-print(stats.descriptive)     # mean, median, std, min, max, range
-print(stats.distribution)    # skewness, kurtosis, tail_type, is_fat_tail
-print(stats.monthly)         # compounded monthly returns
-print(stats.cumulative.iloc[-1])   # total return since first day
+print(stats.descriptive)   # mean, median, std, min, max, range
+print(stats.monthly)       # compounded monthly returns table
+print(stats.distribution)  # skewness, kurtosis, fat-tail classification
 ```
 
-### 3 — Intraday tick data and order flow
+### Intraday order flow → footprint
 
 ```python
-session  = stock.intraday("20260628")
+session = orbo.Instrument("شپنا").intraday("20260628")
 
-df_trades = session.trades           # tick-by-tick trades, sorted by trade_no
-df_ob     = session.orderbook        # incremental order-book update stream
-df_pt     = session.price_tape       # official closing price tape
-df_ct     = session.client_type      # real vs legal buy/sell breakdown
-df_sh     = session.shareholders     # major shareholders
-```
-
-### 4 — Aggressor-side classification (Lee-Ready)
-
-```python
+# Classify each trade as aggressive buy or sell (Lee-Ready algorithm)
 classified = orbo.TradeSideEngine().classify(
     session.trades,
-    session.orderbook,    # enables Quote Rule; falls back to Tick Rule
+    session.orderbook,   # enables Quote Rule; falls back to Tick Rule
 )
-# each row gains: side ("buy"|"sell"|"unknown"), method ("quote"|"tick"|"tick_carry")
+
+# Aggregate into per-price footprint bars
+fp = orbo.FootprintEngine().build(classified)
+print(fp.bars[["price","buy_volume","sell_volume","delta","imbalance"]])
+print(fp.summary())
 ```
 
-### 5 — Footprint chart data
+### Option chain
 
 ```python
-result = orbo.FootprintEngine().build(classified)
+chain = orbo.OptionChain.fetch()             # full snapshot, all markets
+chain.refresh()                              # update prices in-place
 
-print(result.poc_price)      # Point of Control
-print(result.total_delta)    # net buying pressure
-print(result.bars)           # per-price: buy_vol, sell_vol, delta, imbalance
+print(chain.underlyings)                     # ["اهرم", "توان", ...]
+df = chain.for_expiry("اهرم", "1405-05-31") # one strike table
+print(chain.summary())                       # n_strikes + OI per expiry
 ```
 
-### 6 — Option chain
+### Market indices
 
 ```python
-chain = orbo.OptionChain.fetch()       # all markets
-chain = orbo.OptionChain.fetch(1)      # TSE only
+idx = orbo.find_index("شاخص كل")    # search by name
+df  = idx.history()                  # full daily values, Jalali dates
 
-print(chain.underlyings)               # ["اهرم", "توان", ...]
-df = chain.for_expiry("اهرم", "1405-04-31")   # one strike table
-print(chain.summary())                 # n_strikes, OI per expiry
-
-chain.refresh()                        # re-fetch live prices
-```
-
-### 7 — Market indices
-
-```python
-# All indices snapshot
-df = orbo.index_snapshot()
-
-# One index by name
-idx = orbo.find_index("شاخص كل")
-df  = idx.history()          # full daily history, Jalali dates
-df  = idx.today()            # intraday time series
-df  = idx.companies()        # constituent stocks with live prices
-
-# Statistics on index history
 stats = idx.stats()
+print(stats.yearly)
 ```
 
-### 8 — Live data
-
-```python
-snap = orbo.Instrument("شپنا").live()  # fetches 4 endpoints in one connection
-
-snap.price        # current session price (same schema as today())
-snap.trades       # all trades so far today
-snap.orderbook    # 5-level full snapshot (not incremental)
-snap.client_type  # real/legal flows for the session
-```
-
-### 9 — Batch intraday (multiple days with retry)
+### Batch intraday with automatic retry
 
 ```python
 sessions, failed = orbo.fetch_intraday_range(
@@ -158,8 +126,7 @@ sessions, failed = orbo.fetch_intraday_range(
     dates   = ["20260622", "20260623", "20260624", "20260625"],
     fields  = ["trades", "orderbook"],
 )
-if failed:
-    print("Could not fetch:", failed)
+# failed → dates that didn't come through after all retry rounds
 ```
 
 ---
@@ -168,76 +135,39 @@ if failed:
 
 ```
 orbo/
-├── clients/        HTTP layer — httpx wrappers with retry
-├── data/           transformers — raw JSON → typed DataFrames
-├── engines/        pure computation — no network, no I/O
-│   ├── adjustment.py   cumulative price adjustment (Lee-Ready)
-│   ├── trade_side.py   aggressor classification (Quote + Tick Rule)
-│   ├── footprint.py    per-price buy/sell aggregation
-│   ├── daily_stats.py  return series + distribution stats
-│   └── intra_stats.py  intraday VWAP + distribution
-├── models/         Pydantic domain objects
-├── registry/       local instrument lookup (Parquet cache)
-├── history/        InstrumentHistory — daily OHLCV
-├── intraday/       IntradaySession — tick data per day
-├── index/          MarketIndex — TSE/OTC indices
-├── option_chain/   OptionChain — listed option contracts
-└── instrument.py   Instrument — unified high-level API
+├── clients/        httpx wrappers — retry on every call
+├── data/           transformers — JSON → typed DataFrames, Jalali dates
+├── engines/        pure computation — no network, fully testable
+│   ├── adjustment  backward cumulative price adjustment
+│   ├── trade_side  Lee-Ready aggressor classification
+│   ├── footprint   per-price order-flow aggregation
+│   ├── daily_stats return series + distribution stats
+│   └── intra_stats VWAP + tick-level distribution
+├── registry/       local Parquet cache for symbol → inscode lookup
+└── instrument.py   unified high-level entry point
 ```
 
-**Design principles:**
-- Engines are pure functions on DataFrames — no network, no files, fully testable.
-- Transformers own all field renaming and Jalali date conversion — nothing else does.
-- Every HTTP client retries automatically (3 attempts, exponential backoff).
-- `insCode` and `dEven` are never trusted from the API when they arrive null — the caller injects them.
+Engines never touch the network.
+Transformers own all renaming and date conversion.
+Clients retry automatically (3 attempts, exponential backoff).
 
 ---
 
-## Supported Endpoints
+## Coming next — `orbo-quant`
 
-| Category | Endpoint | orbo method |
-|---|---|---|
-| Daily OHLCV | GetClosingPriceDailyList | `stock.history()` |
-| Live price | GetClosingPriceInfo | `stock.today()`, `stock.live().price` |
-| Price adjustment | GetPriceAdjustList | `stock.history(adjust=True)` |
-| Capital increases | GetInstrumentShareChange | `stock.history(adjust=True)` |
-| Intraday trades | GetTradeHistory | `session.trades` |
-| Live trades | GetTrade | `stock.live().trades` |
-| Order book (history) | BestLimits/{date} | `session.orderbook` |
-| Order book (live) | BestLimits | `stock.live().orderbook` |
-| Price tape | GetClosingPriceHistory | `session.price_tape` |
-| Client type (history) | GetClientTypeHistory | `session.client_type` |
-| Client type (live) | GetClientType | `stock.live().client_type` |
-| Shareholders | Shareholder | `session.shareholders` |
-| Trading status | GetInstrumentStateAll | `stock.state()` |
-| Option chain | GetInstrumentOptionMarketWatch | `OptionChain.fetch()` |
-| Index snapshot | GetIndexB1LastAll | `orbo.index_snapshot()` |
-| Index history | GetIndexB2History | `idx.history()` |
-| Index intraday | GetIndexB1LastDay | `idx.today()` |
-| Index companies | GetIndexCompany | `idx.companies()` |
-| Instrument search | GetInstrumentSearch | `orbo.search("فملی")` |
+A separate library that reads from `orbo` and adds options analytics:
+Black-Scholes pricing, Greeks (Δ Γ Θ ν ρ), implied volatility, IV surface,
+strategy builder, and portfolio optimization.
 
----
-
-## What's coming
-
-**`orbo-quant`** — a separate analytical library that reads from `orbo` and adds:
-
-- Black-Scholes pricing and Greeks (Δ, Γ, Θ, Vega, Rho)
-- Implied volatility solver
-- IV surface construction
-- Option strategy builder and P&L diagrams
-- Portfolio optimization
-
-`orbo` intentionally stays focused on data access. Analytics live in `orbo-quant`.
+`orbo` stays focused on data. Analytics live in `orbo-quant`.
 
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/your-username/orbo
-cd orbo
+git clone https://github.com/ORBO-ir/ORBO.git
+cd ORBO
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/ -v
@@ -247,4 +177,4 @@ pytest tests/ -v
 
 ## License
 
-MIT © 2026
+MIT © 2026 — [ORBO-ir](https://github.com/ORBO-ir)
