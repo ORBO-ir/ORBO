@@ -14,7 +14,7 @@ authors = [
     { name = "Mohsen_Ghahremani" }
 ]
 
-license = "MIT"
+license = { text = "MIT" }
 
 keywords = [
     "tsetmc",
@@ -30,11 +30,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-[project.urls]
-Homepage = "https://github.com/ORBO-ir/ORBO"
-Repository = "https://github.com/ORBO-ir/ORBO"
-Issues = "https://github.com/ORBO-ir/ORBO/issues"
-
 
 dependencies = [
     "httpx>=0.28.0",
@@ -45,6 +40,13 @@ dependencies = [
     "pyarrow>=20.0",
 
 ]
+
+[project.urls]
+Homepage = "https://github.com/ORBO-ir/ORBO"
+Repository = "https://github.com/ORBO-ir/ORBO"
+Issues = "https://github.com/ORBO-ir/ORBO/issues"
+
+
 
 [project.optional-dependencies]
 dev = [
