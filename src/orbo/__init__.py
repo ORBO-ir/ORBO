@@ -15,10 +15,34 @@ from orbo.engines import (
     IntraStatsEngine, IntraStatsResult,
 )
 
-from orbo.registry import registry
+from orbo.registry import registry, RegistryUpdater
+from orbo.exceptions import RegistryNotInitializedError
+
 from orbo.intraday import IntradaySession, fetch_intraday_range
 from orbo.instrument import Instrument, LiveSnapshot
 
+
+def bootstrap() -> None:
+    """
+    Build the local instrument registry for the first time.
+
+    Downloads the TSETMC market map and saves it to ~/.orbo/registry.parquet.
+    Run once after installation. Re-run periodically to pick up new listings.
+
+    After bootstrap(), orbo.ticker() and orbo.Instrument("symbol") work
+    instantly without any API call for symbol resolution.
+
+    Example
+    -------
+        import orbo
+        orbo.bootstrap()          # ~5 seconds, run once
+        print(orbo.ticker("فملی"))
+    """
+    path = RegistryUpdater().update()
+    # Reload the in-memory registry so ticker() works immediately
+    registry._loaded = False
+    registry.load()
+    print(f"Registry ready — {len(registry.records):,} instruments loaded from {path}")
 
 def ticker(key: str | int):
     """Look up an instrument by symbol or ins_code from the local registry."""
