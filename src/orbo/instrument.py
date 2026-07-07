@@ -73,13 +73,8 @@ class Instrument:
         snap  = stock.live()
     """
 
-    def __init__(self, key: str | int) -> None:
-        self._inscode: str
-        self._symbol:  str | None = None
-        self._name:    str | None = None
-        self._resolve(key)
-
     def _resolve(self, key: str | int) -> None:
+        """Resolve symbol / name / inscode to a canonical inscode."""
         key_str = str(key).strip()
 
         # Already an inscode (long numeric string)
@@ -98,18 +93,22 @@ class Instrument:
         except FileNotFoundError:
             logger.debug("Registry file not found — falling back to search API")
         except Exception as exc:
+            # RegistryNotInitializedError or any other registry failure
+            # → silently fall back to search so Instrument() still works
             logger.debug("Registry lookup failed (%s) — falling back to search", exc)
 
         # Fall back to TSETMC search API
         results = search(key_str)
         if not results:
             raise OrboNotFoundError(
-                f"Instrument '{key_str}' not found via search."
+                f"Instrument '{key_str}' not found via search.\n"
+                "Tip: run orbo.bootstrap() to build the local registry for faster lookups."
             )
         best          = results[0]
         self._inscode = best.ins_code
         self._symbol  = best.symbol
         self._name    = best.name
+
 
     @property
     def inscode(self) -> str:
