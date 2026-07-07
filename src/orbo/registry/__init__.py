@@ -1,13 +1,16 @@
 """
 Registry module — lazy-loaded local instrument lookup.
 
-The registry parquet file is loaded on first access, not at import time.
-Run RegistryUpdater().update() once to build the file from TSETMC data.
+Quick start
+-----------
+    import orbo
+    orbo.bootstrap()          # run once after installation
+    rec = orbo.ticker("فملی")  # then look up symbols instantly
 """
-from .manager import RegistryManager
+from orbo.registry.manager import RegistryManager
+from orbo.registry.updater import RegistryUpdater
 
-# Lazy-loaded singleton — does NOT call load() at import time.
-# load() is called automatically on first lookup().
+# Singleton — loaded lazily on first lookup()
 registry = RegistryManager()
 
-__all__ = ["registry", "RegistryManager"]
+__all__ = ["registry", "RegistryManager", "RegistryUpdater"]
