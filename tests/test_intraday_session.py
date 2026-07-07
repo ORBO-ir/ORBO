@@ -3,6 +3,7 @@ import pandas as pd
 from unittest.mock import patch, MagicMock
 from orbo.intraday.session import IntradaySession, fetch_intraday_range
 from orbo.exceptions import OrboConnectionError
+from orbo.intraday.session import _to_gregorian
 
 
 TRADES_RAW = [
@@ -102,3 +103,31 @@ class TestFetchIntradayRange:
         )
         assert sessions == {}
         assert failed == ["20260627"]
+
+
+
+class TestToGregorian:
+
+    def test_gregorian_passthrough(self):
+        assert _to_gregorian("20260701") == "20260701"
+
+    def test_jalali_with_dashes(self):
+        assert _to_gregorian("1405-04-10") == "20260701"
+
+    def test_jalali_without_dashes(self):
+        assert _to_gregorian("14050410") == "20260701"
+
+    def test_natural_workflow(self):
+        """The date from history() feeds directly into intraday()."""
+        jalali_date = "1405-04-10"   # what history() returns
+        gregorian   = _to_gregorian(jalali_date)
+        assert gregorian == "20260701"
+
+    def test_invalid_format_raises(self):
+        with pytest.raises(ValueError, match="Unrecognized"):
+            _to_gregorian("2026-07-01")   # Gregorian with dashes — not supported
+
+    def test_invalid_jalali_raises(self):
+        with pytest.raises(ValueError):
+            _to_gregorian("1405-13-10")   # ماه ۱۳ وجود نداره
+        

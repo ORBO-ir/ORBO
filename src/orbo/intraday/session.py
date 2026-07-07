@@ -1,12 +1,12 @@
 """
-IntradaySession — everything ORBO can fetch for one instrument on one
-trading day, bundled behind lazy properties with built-in retry.
+IntradaySession — all tick-level data for one instrument on one trading day.
 """
 from __future__ import annotations
 
 import logging
 import time
 
+import jdatetime
 import pandas as pd
 
 from orbo.clients.intraday import TSETMCIntradayClient
@@ -23,6 +23,62 @@ from orbo.data.transformers import (
 logger = logging.getLogger(LOGGER_NAME)
 
 
+def _to_gregorian(date: str) -> str:
+    """
+    Normalize any supported date format to Gregorian YYYYMMDD string.
+
+    Accepted formats
+    ----------------
+    "20260701"    Gregorian YYYYMMDD  → returned as-is
+    "1405-04-10"  Jalali YYYY-MM-DD  → converted to Gregorian
+    "14050410"    Jalali YYYYMMDD     → converted to Gregorian
+
+    This means the natural workflow works without manual conversion:
+
+        d = stock.history(count=1).iloc[0]["date"]  # "1405-04-10"
+        session = stock.intraday(d)                 # just works
+
+    Raises
+    ------
+    ValueError
+        If the format is not recognized or the date is invalid.
+    """
+    date = str(date).strip().replace("/", "-")
+
+    # ── Gregorian YYYYMMDD: 8 digits, year > 1500 ──────────────────────────
+    if date.isdigit() and len(date) == 8 and int(date[:4]) > 1500:
+        return date
+
+    # ── Jalali YYYY-MM-DD with dashes ──────────────────────────────────────
+    if "-" in date:
+        parts = date.split("-")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Unrecognized date: {date!r}. "
+                "Use Jalali 'YYYY-MM-DD' (e.g. '1405-04-10') "
+                "or Gregorian 'YYYYMMDD' (e.g. '20260701')."
+            )
+        try:
+            jdate = jdatetime.date(int(parts[0]), int(parts[1]), int(parts[2]))
+            return jdate.togregorian().strftime("%Y%m%d")
+        except Exception as exc:
+            raise ValueError(f"Invalid Jalali date {date!r}: {exc}") from exc
+
+    # ── Jalali YYYYMMDD without dashes: 8 digits, year < 1500 ──────────────
+    if date.isdigit() and len(date) == 8 and int(date[:4]) < 1500:
+        try:
+            jdate = jdatetime.date(int(date[:4]), int(date[4:6]), int(date[6:8]))
+            return jdate.togregorian().strftime("%Y%m%d")
+        except Exception as exc:
+            raise ValueError(f"Invalid Jalali date {date!r}: {exc}") from exc
+
+    raise ValueError(
+        f"Unrecognized date format: {date!r}. "
+        "Use Jalali 'YYYY-MM-DD' (e.g. '1405-04-10') "
+        "or Gregorian 'YYYYMMDD' (e.g. '20260701')."
+    )
+
+
 class IntradaySession:
     """
     All intraday data for a single (instrument, date) pair.
@@ -35,24 +91,38 @@ class IntradaySession:
     inscode : str | int
         18-digit TSETMC instrument code.
     date : str
-        Gregorian date as YYYYMMDD (e.g. "20260628").
+        Trading date in **either** format:
+
+        - Jalali  ``YYYY-MM-DD`` — e.g. ``"1405-04-10"``
+        - Gregorian ``YYYYMMDD`` — e.g. ``"20260701"``
+
+        Both are equivalent. The Jalali format is convenient because it
+        matches what ``history()`` returns in its ``date`` column.
 
     Examples
     --------
-        session = IntradaySession("7745894403636165", "20260628")
-        df_trades = session.trades        # fetched here
-        df_trades_again = session.trades  # cached, no new request
+    Natural workflow — no manual date conversion needed::
+
+        stock = orbo.Instrument("شپنا")
+        d     = stock.history(count=1).iloc[0]["date"]  # "1405-04-10"
+        session = stock.intraday(d)                      # just works
+        df = session.trades
+
+    Explicit Gregorian date::
+
+        session = orbo.IntradaySession("7745894403636165", "20260701")
 
     Context manager (auto-closes HTTP connection)::
 
-        with IntradaySession(inscode, date) as s:
+        with stock.intraday("1405-04-10") as s:
             df = s.trades
     """
 
     def __init__(self, inscode: str | int, date: str) -> None:
-        self.inscode = str(inscode)
-        self.date    = str(date)
-        self._client = TSETMCIntradayClient()
+        self.inscode      = str(inscode)
+        self.date_jalali  = str(date)                  # original — for display
+        self.date         = _to_gregorian(str(date))   # Gregorian YYYYMMDD — for API
+        self._client      = TSETMCIntradayClient()
 
         self._trades:       pd.DataFrame | None = None
         self._orderbook:    pd.DataFrame | None = None
@@ -64,7 +134,7 @@ class IntradaySession:
     def trades(self) -> pd.DataFrame:
         """Tick-by-tick trade history, sorted chronologically."""
         if self._trades is None:
-            records = self._client.get_trades(self.inscode, self.date)
+            records      = self._client.get_trades(self.inscode, self.date)
             self._trades = trade_history_to_dataframe(records, self.date)
         return self._trades
 
@@ -72,7 +142,7 @@ class IntradaySession:
     def orderbook(self) -> pd.DataFrame:
         """Order-book (best-limits) incremental update tape."""
         if self._orderbook is None:
-            records = self._client.get_orderbook(self.inscode, self.date)
+            records         = self._client.get_orderbook(self.inscode, self.date)
             self._orderbook = orderbook_to_dataframe(records, self.date)
         return self._orderbook
 
@@ -80,7 +150,7 @@ class IntradaySession:
     def price_tape(self) -> pd.DataFrame:
         """Intraday tape of the official closing price and last trade price."""
         if self._price_tape is None:
-            records = self._client.get_price_tape(self.inscode, self.date)
+            records          = self._client.get_price_tape(self.inscode, self.date)
             self._price_tape = price_tape_to_dataframe(records, self.date)
         return self._price_tape
 
@@ -88,19 +158,17 @@ class IntradaySession:
     def shareholders(self) -> pd.DataFrame:
         """Major shareholders as of this date."""
         if self._shareholders is None:
-            records = self._client.get_shareholders(self.inscode, self.date)
-            self._shareholders = shareholders_to_dataframe(records)
+            records             = self._client.get_shareholders(self.inscode, self.date)
+            self._shareholders  = shareholders_to_dataframe(records)
         return self._shareholders
 
     @property
     def client_type(self) -> pd.DataFrame:
         """Real (حقیقی) vs legal (حقوقی) buy/sell breakdown for this date."""
         if self._client_type is None:
-            record = self._client.get_client_type(self.inscode, self.date)
-            self._client_type = client_type_to_dataframe(record, self.date)
+            record             = self._client.get_client_type(self.inscode, self.date)
+            self._client_type  = client_type_to_dataframe(record, self.date)
         return self._client_type
-
-    # ── Lifecycle ───────────────────────────────────────────────────────────
 
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
@@ -113,56 +181,55 @@ class IntradaySession:
         self.close()
 
     def __repr__(self) -> str:
-        return f"IntradaySession(inscode={self.inscode!r}, date={self.date!r})"
+        return (
+            f"IntradaySession("
+            f"inscode={self.inscode!r}, "
+            f"date={self.date_jalali!r} → {self.date!r})"
+        )
 
 
 def fetch_intraday_range(
-    inscode: str | int,
-    dates: list[str],
-    fields: list[str] | None = None,
-    max_retries: int = 2,
-    backoff: float = 2.0,
+    inscode:     str | int,
+    dates:       list[str],
+    fields:      list[str] | None = None,
+    max_retries: int  = 2,
+    backoff:     float = 2.0,
 ) -> tuple[dict[str, IntradaySession], list[str]]:
     """
-    Fetch IntradaySession objects for multiple dates, retrying only the
-    dates that fail — not the whole batch.
-
-    Each underlying HTTP call already retries internally (see
-    orbo.clients.retry). This function adds an outer retry pass: if a
-    date still fails after the inner retries, it is queued for another
-    full attempt in the next round, giving TSETMC a longer cool-down
-    before that specific date is tried again.
+    Fetch IntradaySession objects for multiple dates with per-date retry.
 
     Parameters
     ----------
-    inscode : instrument code.
-    dates : list of Gregorian YYYYMMDD date strings.
-    fields : which properties to eagerly fetch and validate per date.
-        Default: ["trades"]. Any of "trades", "orderbook", "price_tape",
-        "shareholders", "client_type".
-    max_retries : number of additional outer retry rounds for failed dates.
-    backoff : seconds to wait before each outer retry round, multiplied
-        by the round number.
+    inscode : str | int
+        18-digit TSETMC instrument code.
+    dates : list[str]
+        Trading dates in **either** Jalali ``YYYY-MM-DD`` or Gregorian
+        ``YYYYMMDD`` format. Mixed formats in the same list are fine.
+    fields : list[str] | None
+        Properties to eagerly fetch per date. Default: ``["trades"]``.
+    max_retries : int
+        Additional outer retry rounds for failed dates.
+    backoff : float
+        Seconds between outer retry rounds (multiplied by round number).
 
     Returns
     -------
     (sessions, failed_dates)
-        sessions : dict mapping each succeeded date to its IntradaySession.
+        sessions     : dict mapping each succeeded date to its IntradaySession.
+                       Keys use the original date string you passed in.
         failed_dates : dates that still failed after all retry rounds.
 
     Example
     -------
         sessions, failed = fetch_intraday_range(
             "7745894403636165",
-            dates=["20260622", "20260623", "20260624"],
-            fields=["trades", "orderbook"],
+            dates  = ["1405-04-08", "1405-04-09", "1405-04-10"],  # Jalali ok
+            fields = ["trades", "orderbook"],
         )
-        if failed:
-            print("Could not fetch:", failed)
     """
-    fields = fields or ["trades"]
+    fields   = fields or ["trades"]
     sessions: dict[str, IntradaySession] = {}
-    pending = list(dates)
+    pending  = list(dates)
 
     for round_num in range(max_retries + 1):
         if not pending:
